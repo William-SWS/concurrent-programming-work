@@ -69,6 +69,79 @@ A correct implementation should:
 - [Antonio Bezerra de Morais Neto]
 
 
+## Repository Structure
+
+```
+concurrent-programming-work/
+│
+├── README.md               # Project overview and documentation
+├── go.mod                  # Go module definition and dependencies
+├── Makefile                # Build, run and test automation targets
+├── .gitignore              # Files and directories ignored by Git
+│
+├── cmd/                    # Application entry points
+│   ├── main.go             # Main executable: runs the simulation for all test cases
+│   └── benchmark/
+│       └── main.go         # Benchmark executable: measures performance across solutions
+│
+├── pkg/                    # Public, reusable packages
+│   ├── graph/              # Graph data structure (adjacency matrix representation)
+│   │   ├── graph.go        # Graph type definition and core operations
+│   │   ├── adjacency.go    # Adjacency matrix parsing and helpers
+│   │   └── graph_test.go   # Unit tests for graph package
+│   │
+│   ├── philosopher/        # Philosopher abstraction shared across solutions
+│   │   ├── philosopher.go  # Philosopher struct, lifecycle and timing logic
+│   │   ├── states.go       # Philosopher state definitions (THINKING/THIRSTY/DRINKING)
+│   │   └── philosopher_test.go # Unit tests for philosopher package
+│   │
+│   └── bottle/             # Bottle (shared resource / edge) abstraction
+│       ├── bottle.go       # Bottle struct and mutex-based locking logic
+│       └── bottle_test.go  # Unit tests for bottle package
+│
+├── internal/               # Private solution implementations
+│   ├── solution1_ordering/ # Solution 1: Resource ordering (bottle numbering)
+│   │   ├── solver.go       # Orchestrates the simulation for this solution
+│   │   ├── philosopher.go  # Philosopher behaviour specific to ordering strategy
+│   │   └── solver_test.go  # Integration tests for solution 1
+│   │
+│   ├── solution2_arbiter/  # Solution 2: Central arbiter (waiter)
+│   │   ├── solver.go       # Orchestrates the simulation for this solution
+│   │   ├── arbiter.go      # Arbiter goroutine that grants/denies resource access
+│   │   ├── philosopher.go  # Philosopher behaviour specific to arbiter strategy
+│   │   └── solver_test.go  # Integration tests for solution 2
+│   │
+│   ├── solution3_chandy_misra/ # Solution 3: Chandy-Misra token-passing algorithm
+│   │   ├── solver.go       # Orchestrates the simulation for this solution
+│   │   ├── token.go        # Token/fork state and passing logic
+│   │   ├── philosopher.go  # Philosopher behaviour specific to Chandy-Misra strategy
+│   │   └── solver_test.go  # Integration tests for solution 3
+│   │
+│   └── solution4_backoff/  # Solution 4: Randomised exponential backoff
+│       ├── solver.go       # Orchestrates the simulation for this solution
+│       ├── philosopher.go  # Philosopher behaviour specific to backoff strategy
+│       └── solver_test.go  # Integration tests for solution 4
+│
+├── data/                   # Input graph definitions (adjacency matrices)
+│   ├── caso1_jantar_5.txt  # Case 1: Classic dining philosophers (5-node cycle)
+│   ├── caso2_bar_6.txt     # Case 2: Bar scenario with low connectivity (6 nodes)
+│   └── caso3_bar_12.txt    # Case 3: Bar scenario with high connectivity (12 nodes)
+│
+├── results/                # Output directory for simulation results
+│   ├── caso1/              # Timing statistics for case 1
+│   ├── caso2/              # Timing statistics for case 2
+│   └── caso3/              # Timing statistics for case 3
+│
+├── scripts/                # Utility scripts for running and analysing experiments
+│   ├── run_all.sh          # Shell script to execute all test cases for every solution
+│   └── compare_results.py  # Python script to compare and plot results across solutions
+│
+└── docs/                   # Additional project documentation
+    ├── especificacao.md    # Problem specification and requirements
+    ├── solucoes.md         # Description and analysis of each implemented solution
+    └── resultados.md       # Experimental results and performance comparison
+```
+
 ## License
 
 This project was developed as an academic assignment for the Concurrent Programming course.
