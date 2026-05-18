@@ -1,0 +1,27 @@
+=== Simulation Results - Case 1 ===
+Total duration: 16.0335131s
+
+--- Metrics by Degree ---
+Degree 2: Count=5, Avg Waiting (Thirsty) Time=2.61246224s
+
+--- Individual Results ---
+Philosopher 0 (Deg 2):
+  Tranquilo: 6.0043781s
+  Com Sede:  4.0171879s
+  Bebendo:   6.0073632s
+Philosopher 1 (Deg 2):
+  Tranquilo: 7.004836s
+  Com Sede:  2.0108817s
+  Bebendo:   6.0111714s
+Philosopher 2 (Deg 2):
+  Tranquilo: 6.0041296s
+  Com Sede:  4.0141553s
+  Bebendo:   6.0097934s
+Philosopher 3 (Deg 2):
+  Tranquilo: 7.0052298s
+  Com Sede:  2.0092746s
+  Bebendo:   6.0078248s
+Philosopher 4 (Deg 2):
+  Tranquilo: 6.0026969s
+  Com Sede:  1.0108117s
+  Bebendo:   6.0068706s
