@@ -24,13 +24,21 @@ Philosophers are represented as vertices in a graph, while bottles (shared resou
 
 ## Implemented Solutions
 
-This project implements **two synchronization solutions** for comparison:
+This project implements **four synchronization solutions** for comparison:
 
 ### 1. Resource Ordering (Bottle Numbering)
 Each edge is assigned a unique number. Philosophers always acquire bottles in ascending order, preventing circular wait conditions and ensuring deadlock freedom.
 
 ### 2. Arbiter Solution (Waiter)
 A central arbiter (waiter) controls resource access. Philosophers must request permission from the waiter before attempting to acquire any bottles. The waiter ensures at most N-1 philosophers can be active simultaneously.
+
+### 3. Chandy-Misra
+Each bottle has one of the following states: full or empty. Initially, all bottles are empty. When the philosopher gets thirsty, he sends requests for all the neighbours asking for the resource. After receiving the message, if drinking, awaits to end. If the philosopher isn't drinking and the bottle is empty, fulfills the bottle and gives it to the requester. When the philosopher ends drinking, mark the bottle as empty. If a philosopher receives more than one request, serves in order of arrival.
+
+### 4. Randomized Backoff
+If a philosopher cannot acquire all of its bottles, it releases the ones it
+already holds and waits for a random amount of time before trying again,
+breaking circular wait probabilistically.
 
 ## Features
 
@@ -53,6 +61,27 @@ A central arbiter (waiter) controls resource access. Philosophers must request p
 
 ## Requirements
 - Go compiler installed in your machine.
+- (optional) Python 3 for the comparison script.
+
+## How to Run
+
+```sh
+# one solution on one graph
+make run SOL=ordenacao GRAFO=data/caso2_bar_6.txt RODADAS=6
+# or directly:
+go run ./cmd/runner -solucao=ordenacao -grafo=data/caso2_bar_6.txt -rodadas=6
+
+# all four solutions on all three graphs -> results/
+make all
+
+# summary comparison table
+make compare
+
+# data-race check (evidence of no deadlock/race)
+make race
+```
+
+Solution names: `ordenacao`, `arbitro`, `chandy_misra`, `backoff`.
 
 ## Expected Results
 
@@ -74,73 +103,50 @@ A correct implementation should:
 ```
 concurrent-programming-work/
 │
-├── README.md               # Project overview and documentation
-├── go.mod                  # Go module definition and dependencies
-├── Makefile                # Build, run and test automation targets
-├── .gitignore              # Files and directories ignored by Git
+├── README.md             # Project overview and documentation
+├── go.mod                # Go module definition
+├── Makefile              # build / test / race / run / all / compare targets
+├── .gitignore
 │
-├── cmd/                    # Application entry points
-│   ├── main.go             # Main executable: runs the simulation for all test cases
-│   └── benchmark/
-│       └── main.go         # Benchmark executable: measures performance across solutions
+├── core/                 # SHARED CODE 
+│   ├── graph.go          # adjacency-matrix parsing + neighbours/degree/edges
+│   ├── states.go         # State enum: tranquilo / com sede / bebendo
+│   ├── philosopher.go    # Philosopher struct + timing accumulation
+│   ├── metrics.go        # per-state metrics + final report (stable TSV)
+│   ├── solver.go         # Solver interface implemented by every solution
+│   └── graph_test.go     # validates the 3 data files (loads + symmetric)
 │
-├── pkg/                    # Public, reusable packages
-│   ├── graph/              # Graph data structure (adjacency matrix representation)
-│   │   ├── graph.go        # Graph type definition and core operations
-│   │   ├── adjacency.go    # Adjacency matrix parsing and helpers
-│   │   └── graph_test.go   # Unit tests for graph package
-│   │
-│   ├── philosopher/        # Philosopher abstraction shared across solutions
-│   │   ├── philosopher.go  # Philosopher struct, lifecycle and timing logic
-│   │   ├── states.go       # Philosopher state definitions (THINKING/THIRSTY/DRINKING)
-│   │   └── philosopher_test.go # Unit tests for philosopher package
-│   │
-│   └── bottle/             # Bottle (shared resource / edge) abstraction
-│       ├── bottle.go       # Bottle struct and mutex-based locking logic
-│       └── bottle_test.go  # Unit tests for bottle package
+├── solucoes/             # ONE PACKAGE PER SOLUTION - one student each
+│   ├── ordenacao/        # Solution 1: resource ordering
+│   │   ├── solver.go
+│   │   └── solver_test.go   # deadlock/race test (go test -race)
+│   ├── arbitro/          # Solution 2: arbiter (waiter)
+│   ├── chandy_misra/     # Solution 3: Chandy-Misra
+│   └── backoff/          # Solution 4: randomized backoff
 │
-├── internal/               # Private solution implementations
-│   ├── solution1_ordering/ # Solution 1: Resource ordering (bottle numbering)
-│   │   ├── solver.go       # Orchestrates the simulation for this solution
-│   │   ├── philosopher.go  # Philosopher behaviour specific to ordering strategy
-│   │   └── solver_test.go  # Integration tests for solution 1
-│   │
-│   ├── solution2_arbiter/  # Solution 2: Central arbiter (waiter)
-│   │   ├── solver.go       # Orchestrates the simulation for this solution
-│   │   ├── arbiter.go      # Arbiter goroutine that grants/denies resource access
-│   │   ├── philosopher.go  # Philosopher behaviour specific to arbiter strategy
-│   │   └── solver_test.go  # Integration tests for solution 2
-│   │
-│   ├── solution3_chandy_misra/ # Solution 3: Chandy-Misra token-passing algorithm
-│   │   ├── solver.go       # Orchestrates the simulation for this solution
-│   │   ├── token.go        # Token/fork state and passing logic
-│   │   ├── philosopher.go  # Philosopher behaviour specific to Chandy-Misra strategy
-│   │   └── solver_test.go  # Integration tests for solution 3
-│   │
-│   └── solution4_backoff/  # Solution 4: Randomised exponential backoff
-│       ├── solver.go       # Orchestrates the simulation for this solution
-│       ├── philosopher.go  # Philosopher behaviour specific to backoff strategy
-│       └── solver_test.go  # Integration tests for solution 4
+├── cmd/runner/main.go    # single entry point: -solucao -grafo -rodadas
 │
-├── data/                   # Input graph definitions (adjacency matrices)
-│   ├── caso1_jantar_5.txt  # Case 1: Classic dining philosophers (5-node cycle)
-│   ├── caso2_bar_6.txt     # Case 2: Bar scenario with low connectivity (6 nodes)
-│   └── caso3_bar_12.txt    # Case 3: Bar scenario with high connectivity (12 nodes)
+├── data/                 # the 3 graphs from the assignment (adjacency matrices)
+│   ├── caso1_jantar_5.txt
+│   ├── caso2_bar_6.txt
+│   └── caso3_bar_12.txt
 │
-├── results/                # Output directory for simulation results
-│   ├── caso1/              # Timing statistics for case 1
-│   ├── caso2/              # Timing statistics for case 2
-│   └── caso3/              # Timing statistics for case 3
+├── results/              # generated reports (one file per solution/case)
 │
-├── scripts/                # Utility scripts for running and analysing experiments
-│   ├── run_all.sh          # Shell script to execute all test cases for every solution
-│   └── compare_results.py  # Python script to compare and plot results across solutions
+├── scripts/
+│   ├── run_all.sh        # run every solution on every graph -> results/
+│   └── compare_results.py# summary table from results/
 │
-└── docs/                   # Additional project documentation
-    ├── especificacao.md    # Problem specification and requirements
-    ├── solucoes.md         # Description and analysis of each implemented solution
-    └── resultados.md       # Experimental results and performance comparison
+└── docs/
+    └── relatorio.md      # comparison report template
 ```
+
+### Division of work
+
+Each solution is an independent package under `solucoes/` implementing the
+`core.Solver` interface, so the four can be developed in parallel without
+conflicts. The shared `core/` (graph parsing, philosopher, metrics) is the only
+part that must be agreed on first.
 
 ## License
 
