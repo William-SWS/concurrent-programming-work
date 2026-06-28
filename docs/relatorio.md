@@ -243,7 +243,14 @@ Para trabalhos futuros, sugerimos: (a) a implementação completa das soluções
 
 ## 7. Como Reproduzir
 
+Após descompactar o arquivo ZIP recebido, acesse o diretório raiz do projeto e utilize os comandos abaixo.
+
+**Pré-requisito:** Go 1.21 ou superior instalado no sistema.
+
 ```sh
+# Entrar no diretório do projeto
+cd concurrent-programming-work/
+
 # Executar uma solução em um grafo específico
 make run SOL=arbitro GRAFO=data/caso2_bar_6.txt RODADAS=6
 
@@ -261,6 +268,12 @@ Os resultados são armazenados no diretório `results/` e podem ser visualizados
 
 ```sh
 python3 scripts/compare_results.py
+```
+
+Também é possível executar diretamente sem o Makefile:
+
+```sh
+go run ./cmd/runner -solucao=arbitro -grafo=data/caso1_jantar_5.txt -rodadas=6
 ```
 
 ---
