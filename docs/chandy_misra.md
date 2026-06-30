@@ -59,6 +59,61 @@ id  grau  tranquilo  com_sede  bebendo  bebidas
 # grau=2 media=4.00s (n=5)
 ```
 
+
+```
+  go run ./cmd/runner -solucao=chandy_misra -grafo=data/caso1_jantar_5.txt -rodadas=6
+# solucao=Chandy-Misra
+# tempo_total=19.01s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	7.00	3.00	6.01	6
+1	2	8.00	5.01	6.00	6
+2	2	7.00	5.00	6.00	6
+3	2	4.00	5.00	6.01	6
+4	2	5.00	3.00	6.00	6
+# espera media (com sede) por grau:
+# grau=2 media=4.20s (n=5)
+  go run ./cmd/runner -solucao=chandy_misra -grafo=data/caso2_bar_6.txt -rodadas=6
+
+# solucao=Chandy-Misra
+# tempo_total=24.01s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	7.00	2.00	6.00	6
+1	2	8.00	3.00	6.00	6
+2	3	14.01	4.00	6.01	6
+3	3	8.00	4.00	6.00	6
+4	2	5.00	2.00	6.00	6
+5	4	13.00	3.00	6.00	6
+# espera media (com sede) por grau:
+# grau=2 media=2.34s (n=3)
+# grau=3 media=4.00s (n=2)
+# grau=4 media=3.00s (n=1)
+  go run ./cmd/runner -solucao=chandy_misra -grafo=data/caso3_bar_12.txt -rodadas=3
+# solucao=Chandy-Misra
+# tempo_total=13.01s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	3	2.00	0.00	3.00	3
+1	3	4.00	0.00	3.00	3
+2	2	4.00	1.00	3.00	3
+3	4	10.00	0.00	3.00	3
+4	4	3.00	0.00	3.00	3
+5	3	5.00	0.00	3.00	3
+6	5	6.00	0.00	3.00	3
+7	4	7.00	2.00	3.00	3
+8	3	5.00	1.00	3.00	3
+9	6	6.00	2.00	3.00	3
+10	2	1.00	1.00	3.00	3
+11	3	6.00	0.00	3.00	3
+# espera media (com sede) por grau:
+# grau=2 media=1.00s (n=2)
+# grau=3 media=0.20s (n=5)
+# grau=4 media=0.67s (n=3)
+# grau=5 media=0.00s (n=1)
+# grau=6 media=2.00s (n=1)
+```
+
+
+
+
 ---
 
 ## 2. O problema
