@@ -1,0 +1,10 @@
+# solucao=backoff
+# tempo_total=17.25s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	7.32	2.91	6.00	6
+1	2	4.03	2.80	6.00	6
+2	2	7.45	2.94	6.00	6
+3	2	4.40	2.91	6.00	6
+4	2	6.37	4.87	6.00	6
+# espera media (com sede) por grau:
+# grau=2 media=3.29s (n=5)

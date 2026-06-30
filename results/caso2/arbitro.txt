@@ -1,0 +1,13 @@
+# solucao=Árbitro (Garçom)
+# tempo_total=21.01s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	4.00	3.00	6.00	6
+1	2	6.00	2.00	6.00	6
+2	3	7.00	6.01	6.00	6
+3	3	8.00	4.00	6.00	6
+4	2	8.00	2.00	6.00	6
+5	4	15.00	0.00	6.00	6
+# espera media (com sede) por grau:
+# grau=2 media=2.34s (n=3)
+# grau=3 media=5.00s (n=2)
+# grau=4 media=0.00s (n=1)

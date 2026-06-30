@@ -1,0 +1,13 @@
+# solucao=Chandy-Misra
+# tempo_total=23.02s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	7.00	3.00	6.00	6
+1	2	8.00	5.00	6.01	6
+2	3	14.01	2.01	6.00	6
+3	3	8.00	5.01	6.00	6
+4	2	5.00	5.01	6.00	6
+5	4	13.01	4.00	6.01	6
+# espera media (com sede) por grau:
+# grau=2 media=4.34s (n=3)
+# grau=3 media=3.51s (n=2)
+# grau=4 media=4.00s (n=1)

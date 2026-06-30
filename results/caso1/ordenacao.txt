@@ -1,0 +1,10 @@
+# solucao=Ordenacao de Recursos
+# tempo_total=19.01s
+id	grau	tranquilo	com_sede	bebendo	bebidas
+0	2	7.00	4.00	6.00	6
+1	2	7.00	6.00	6.00	6
+2	2	2.00	4.00	6.01	6
+3	2	10.00	3.00	6.01	6
+4	2	4.00	1.00	6.00	6
+# espera media (com sede) por grau:
+# grau=2 media=3.60s (n=5)
