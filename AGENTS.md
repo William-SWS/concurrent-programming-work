@@ -26,7 +26,7 @@ Todas as soluções usam estes mesmos 3 arquivos; round counts são fixos por ca
 
 | Solução | Pacote | Status |
 |---------|--------|--------|
-| Ordenação de Recursos | `solucoes/ordenacao/` | **NÃO implementada** — `Run()` faz `panic` |
+| Ordenação de Recursos | `solucoes/ordenacao/` | Implementada |
 | Árbitro (Garçom) | `solucoes/arbitro/` | Implementada, mas teste `TestSemDeadlock` tem `t.Skip` **stale** (remover o Skip) |
 | Chandy-Misra | `solucoes/chandy_misra/` | Implementada |
 | Randomized Backoff | `solucoes/backoff/` | Implementada |

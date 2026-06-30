@@ -1,0 +1,71 @@
+{
+  "case_id": 2,
+  "total_duration_ns": 19030434800,
+  "philosophers": [
+    {
+      "id": 0,
+      "degree": 2,
+      "thinking_time_ns": 7003534100,
+      "thirsty_time_ns": 4013773600,
+      "drinking_time_ns": 6008926800,
+      "drink_count": 6
+    },
+    {
+      "id": 1,
+      "degree": 2,
+      "thinking_time_ns": 9003875700,
+      "thirsty_time_ns": 4014435600,
+      "drinking_time_ns": 6007089800,
+      "drink_count": 6
+    },
+    {
+      "id": 2,
+      "degree": 3,
+      "thinking_time_ns": 9002290400,
+      "thirsty_time_ns": 3011618200,
+      "drinking_time_ns": 6007098400,
+      "drink_count": 6
+    },
+    {
+      "id": 3,
+      "degree": 3,
+      "thinking_time_ns": 11002972800,
+      "thirsty_time_ns": 2012983900,
+      "drinking_time_ns": 6008300600,
+      "drink_count": 6
+    },
+    {
+      "id": 4,
+      "degree": 2,
+      "thinking_time_ns": 5002929000,
+      "thirsty_time_ns": 3013492100,
+      "drinking_time_ns": 6005174100,
+      "drink_count": 6
+    },
+    {
+      "id": 5,
+      "degree": 4,
+      "thinking_time_ns": 5002387700,
+      "thirsty_time_ns": 4010861600,
+      "drinking_time_ns": 6007352400,
+      "drink_count": 6
+    }
+  ],
+  "degree_metrics": [
+    {
+      "degree": 2,
+      "count": 3,
+      "avg_thirsty_time_ns": 3680567100
+    },
+    {
+      "degree": 3,
+      "count": 2,
+      "avg_thirsty_time_ns": 2512301050
+    },
+    {
+      "degree": 4,
+      "count": 1,
+      "avg_thirsty_time_ns": 4010861600
+    }
+  ]
+}

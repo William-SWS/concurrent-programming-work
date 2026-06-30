@@ -51,7 +51,7 @@ Os três casos de teste utilizam matrizes de adjacência armazenadas em arquivos
 
 ### 2.1 Ordenação de Recursos
 
-> *Solução não implementada.*
+> Implementada em `solucoes/ordenacao`, usando uma ordem global das arestas para adquirir garrafas.
 
 A ordenação de recursos atribui um número único a cada aresta (garrafa). Os filósofos sempre adquirem as garrafas em ordem crescente de numeração, independentemente de quais precisam. Essa abordagem elimina a possibilidade de espera circular (_circular wait_), que é uma das quatro condições necessárias para o deadlock (Coffman, 1971). Cada filósofo solicita as garrafas de que precisa seguindo estritamente a ordem numérica, garantindo que não haja ciclos no grafo de alocação.
 
@@ -159,13 +159,13 @@ Cada filósofo possui uma fonte de aleatoriedade (`math/rand.New`) exclusiva, ev
 
 As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.Second` como unidade de tempo conforme o enunciado. Cada solução foi executada nos três casos com o número de rodadas especificado.
 
-> **Nota:** A solução de Ordenação de Recursos não foi implementada; as células correspondentes estão marcadas com "—".
+> **Nota:** As tabelas abaixo preservam os resultados coletados antes da integração da solução de Ordenação de Recursos; as células "—" indicam que esses benchmarks ainda precisam ser reexecutados.
 
 ### Caso 1 — Jantar Clássico (5 nós, grau 2, 6 rodadas)
 
 | Solução | Tempo total (s) | Espera média (s) | Observações |
 |---------|-----------------|------------------|-------------|
-| Ordenação | — | — | *não implementada* |
+| Ordenação | — | — | *benchmark pendente* |
 | Árbitro | 18,01 | 2,80 | Espera individual entre 2 e 4 s |
 | Chandy-Misra | 18,01 | 4,20 | Distribuição uniforme: 3 a 5 s |
 | Backoff | 17,42 | 3,56 | Variação individual: 2,40 a 5,15 s |
@@ -176,7 +176,7 @@ As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.
 
 | Solução | Tempo total (s) | Espera média por grau | Observações |
 |---------|-----------------|----------------------|-------------|
-| Ordenação | — | — | *não implementada* |
+| Ordenação | — | — | *benchmark pendente* |
 | Árbitro | 28,02 | Grau 2: 1,67 s | Desigualdade perceptível: grau 4 esperou 7,01 s |
 | | | Grau 3: 4,00 s | Filósofo 4 (grau 2) teve 0 s de espera |
 | | | Grau 4: 7,01 s | |
@@ -193,7 +193,7 @@ As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.
 
 | Solução | Tempo total (s) | Espera média por grau | Observações |
 |---------|-----------------|----------------------|-------------|
-| Ordenação | — | — | *não implementada* |
+| Ordenação | — | — | *benchmark pendente* |
 | Árbitro | 19,01 | Grau 2: 2,00 s | Grau 3 teve a menor espera (0,40 s) |
 | | | Grau 3: 0,40 s | 3 filósofos de grau 3 tiveram 0 s de espera |
 | | | Grau 4: 2,34 s | Topologia influencia mais que o grau |
@@ -303,7 +303,7 @@ A comparação entre as soluções revela um *trade-off* fundamental entre **sim
 - O **Árbitro** é a solução mais simples (170 linhas, 1 camada conceitual), mas introduz um ponto único de contenção e não garante *fairness*.
 - O **Chandy-Misra** é o mais robusto (garantias formais, distribuído, sem *starvation*), porém significativamente mais complexo (410 linhas, 2 camadas conceituais, gestão explícita de aposentadoria).
 - O **Backoff** ocupa uma posição intermediária: mais simples que o Chandy-Misra (142 linhas), mas sem garantias determinísticas. O uso de `TryLock` elimina espera bloqueante, mas o recuo probabilístico pode, em teoria, levar a starvation.
-- A **Ordenação de Recursos** (não implementada) ocuparia uma posição similar ao Árbitro em simplicidade, com a vantagem de garantir *starvation-freedom*, desde que a ordem total de recursos seja conhecida e estável.
+- A **Ordenação de Recursos** ocupa uma posição similar ao Árbitro em simplicidade, com a vantagem de evitar deadlock por ordem total dos recursos, desde que essa ordem seja conhecida e estável.
 
 O valor **N − 1** no Árbitro representa o ponto ótimo no *trade-off* entre prevenção de deadlock e maximização da concorrência: valores menores aumentariam a serialização desnecessariamente; valores maiores (N) permitiriam deadlock.
 
@@ -321,7 +321,7 @@ Os resultados experimentais confirmam que todas as três soluções implementada
 
 A principal lição do desenvolvimento foi a necessidade de rigor na implementação de algoritmos concorrentes: uma versão inicial do Chandy-Misra com apenas uma camada (garrafas) apresentou deadlock no caso de maior conectividade, ilustrando como a generalização do problema (subconjunto arbitrário de recursos) introduz sutilezas que não aparecem no jantar clássico.
 
-Para trabalhos futuros, sugerimos: (a) a implementação da solução de Ordenação de Recursos; (b) a execução com um número maior de rodadas para estabilizar as médias; (c) a avaliação em grafos de maior escala (N ≥ 100) para estressar a escalabilidade; e (d) a introdução de métricas adicionais como *throughput* e utilização de recursos.
+Para trabalhos futuros, sugerimos: (a) a reexecução dos benchmarks da solução de Ordenação de Recursos; (b) a execução com um número maior de rodadas para estabilizar as médias; (c) a avaliação em grafos de maior escala (N ≥ 100) para estressar a escalabilidade; e (d) a introdução de métricas adicionais como *throughput* e utilização de recursos.
 
 ---
 
