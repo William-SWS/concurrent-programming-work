@@ -11,8 +11,6 @@ import (
 //
 //	go test -race ./solucoes/arbitro/
 func TestSemDeadlock(t *testing.T) {
-	t.Skip("TODO: implementar Solver.Run e remover este Skip")
-
 	g, err := core.LoadGraph("../../data/caso1_jantar_5.txt")
 	if err != nil {
 		t.Fatal(err)

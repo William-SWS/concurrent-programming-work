@@ -1,10 +1,14 @@
 # solucao=Chandy-Misra
-# tempo_total=18.01s
+# tempo_total=20.02s
 id	grau	tranquilo	com_sede	bebendo	bebidas
-0	2	7.00	4.00	6.00	6
-1	2	8.00	4.00	6.00	6
-2	2	7.00	4.00	6.00	6
-3	2	4.00	6.00	6.00	6
-4	2	5.00	4.00	6.00	6
+0	2	7.00	6.01	6.00	6
+1	2	8.00	6.01	6.00	6
+2	2	7.00	6.00	6.01	6
+3	2	4.00	6.01	6.00	6
+4	2	5.00	6.01	6.00	6
 # espera media (com sede) por grau:
-# grau=2 media=4.40s (n=5)
+# grau=2 media=6.01s (n=5)
+# starvation analysis:
+#   max_wait=6.01s mean_wait=6.01s stddev=0.00s max/mean=1.00 cv=0.00
+#   grau=2 media=6.01s max=6.01s max/media=1.00 (n=5)
+#   resultado: nenhum filosofo com espera acima de 2x a media do grupo

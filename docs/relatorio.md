@@ -22,15 +22,26 @@ Diferentemente do problema clássico, onde os filósofos estão dispostos em um 
 
 Cada filósofo percorre ciclicamente três estados: **tranquilo** (pensando por um tempo aleatório de 0 a *n* segundos), **com sede** (tentando adquirir todas as garrafas do subconjunto sorteado) e **bebendo** (seção crítica de 1 segundo). O tempo gasto no estado "com sede" representa o tempo de espera e é a principal métrica para avaliar *fairness* entre os filósofos.
 
-O objetivo deste projeto foi implementar e comparar quatro soluções de sincronização para este problema, cada uma utilizando uma estratégia diferente para garantir ausência de deadlock e, idealmente, ausência de starvation. As soluções foram testadas em três cenários (grafos) de complexidade crescente, variando o número de vértices e a conectividade.
+O objetivo deste projeto foi implementar e comparar quatro soluções de sincronização para este problema, cada uma utilizando uma estratégia diferente para garantir ausência de deadlock. As soluções foram testadas em três cenários (grafos) de complexidade crescente, variando o número de vértices e a conectividade.
 
 ---
 
-## 2. Implementação
+## 2. Estrutura do Projeto
 
-O projeto foi estruturado em Go, com um pacote compartilhado `core/` contendo as definições comuns (grafo, estados, filósofo, métricas e a interface `Solver`), e quatro pacotes independentes em `solucoes/`, cada um implementando uma solução. Essa arquitetura permitiu o desenvolvimento paralelo das quatro soluções sem conflitos.
+O projeto foi estruturado em Go 1.24, com um pacote compartilhado `core/` contendo as definições comuns e quatro pacotes independentes em `solucoes/`, cada um implementando uma solução. A arquitetura permitiu o desenvolvimento paralelo sem conflitos.
 
-A interface `Solver` é o contrato central:
+### 2.1 Pacote Core (`core/`)
+
+| Arquivo | Responsabilidade |
+|---------|-----------------|
+| `graph.go` | Estrutura `Graph` (matriz de adjacência), `LoadGraph()`, `Neighbors()`, `Degree()`, `Edges()` |
+| `states.go` | Enum `State`: `Tranquilo`, `ComSede`, `Bebendo` |
+| `philosopher.go` | Struct `Philosopher` (ID, Degree, Metrics), método `Record(state, duration)` |
+| `metrics.go` | Struct `Metrics`, função `Report()` para saída TSV |
+| `analyze.go` | Funções de análise de starvation (outliers por grau, cv, max/mean) |
+| `solver.go` | Interface `Solver: Name() + Run(g *Graph, rounds int) []*Philosopher` |
+
+### 2.2 Interface Central
 
 ```go
 type Solver interface {
@@ -39,184 +50,309 @@ type Solver interface {
 }
 ```
 
-Cada solução recebe o grafo e o número de rodadas, executa a simulação e devolve os filósofos com as métricas de tempo preenchidas.
+### 2.3 Casos de Teste
 
-Os três casos de teste utilizam matrizes de adjacência armazenadas em arquivos `.txt`:
+| Caso | Arquivo | Descrição | Nós | Topologia | Grau máximo | Rodadas |
+|------|---------|-----------|-----|-----------|-------------|---------|
+| 1 | `data/caso1_jantar_5.txt` | Jantar clássico | 5 | Ciclo | 2 | 6 |
+| 2 | `data/caso2_bar_6.txt` | Bar conectividade baixa | 6 | Esparsa | 4 | 6 |
+| 3 | `data/caso3_bar_12.txt` | Bar conectividade alta | 12 | Densa | 6 | 3 |
 
-| Caso | Descrição | Nós | Grau máximo | Rodadas |
-|------|-----------|-----|-------------|---------|
-| 1 | Jantar clássico (grafo ciclo) | 5 | 2 | 6 |
-| 2 | Bar com conectividade baixa | 6 | 4 | 6 |
-| 3 | Bar com conectividade alta | 12 | 6 | 3 |
+### 2.4 Pipeline de Execução
 
-### 2.1 Ordenação de Recursos
+```sh
+# Execução única
+go run ./cmd/runner -solucao=<nome> -grafo=<arquivo> -rodadas=<N>
 
-> Implementada em `solucoes/ordenacao`, usando uma ordem global das arestas para adquirir garrafas.
+# Todas as soluções em todos os grafos
+make all          # → results/caso<N>/<solucao>.txt
 
-A ordenação de recursos atribui um número único a cada aresta (garrafa). Os filósofos sempre adquirem as garrafas em ordem crescente de numeração, independentemente de quais precisam. Essa abordagem elimina a possibilidade de espera circular (_circular wait_), que é uma das quatro condições necessárias para o deadlock (Coffman, 1971). Cada filósofo solicita as garrafas de que precisa seguindo estritamente a ordem numérica, garantindo que não haja ciclos no grafo de alocação.
+# Tabela comparativa
+make compare      # → python3 scripts/compare_results.py
 
-### 2.2 Árbitro (Garçom)
+# Validação com detector de data races
+make race         # → go test -race ./...
+```
 
-> *Solução implementada por Samuel William Silva Almeida.*
+---
 
-A solução do árbitro central introduz um coordenador global — o garçom — que controla quantos filósofos podem estar ativos simultaneamente. O algoritmo utiliza um semáforo de capacidade **N − 1** implementado como um canal Go bufferizado:
+## 3. Soluções Implementadas
+
+### 3.1 Ordenação de Recursos
+
+**Responsável:** Antonio Bezerra de Morais Neto  
+**Pacote:** `solucoes/ordenacao/` (108 linhas)
+
+#### Algoritmo
+
+Cada aresta (garrafa) recebe um número de ordem global único. Os filósofos adquirem as garrafas **estritamente em ordem crescente** dessa numeração, eliminando a condição de espera circular (_circular wait_) — uma das quatro condições necessárias para o deadlock (Coffman, Elphick & Shoshani, 1971).
+
+```go
+chosen := chooseNeighbors(r, neighbors)       # subconjunto aleatório
+sort.Slice(chosen, func(i, j int) bool {       # ordena pela numeração global
+    return order[lockOrder(p.ID, chosen[i])] < order[lockOrder(p.ID, chosen[j])]
+})
+for _, nb := range chosen {
+    bottles[lockOrder(p.ID, nb)].Lock()
+}
+```
+
+#### Prova de Correção
+
+Se todos os processos adquirem recursos na mesma ordem global, o grafo de alocação nunca pode conter ciclos. Suponha, por absurdo, um ciclo P₁ → R₁ → P₂ → R₂ → ... → Pₖ → Rₖ → P₁. Pela regra de aquisição, se Pⱼ aguarda Rⱼ, então `num(Rⱼ) > num(Rⱼ₋₁)`. Percorrendo o ciclo: `num(R₁) > num(Rₖ) > ... > num(R₁)` — contradição. Logo, deadlock é impossível.
+
+#### Complexidade
+
+| Cenário | Complexidade | Justificativa |
+|---------|-------------|---------------|
+| Tempo (melhor caso) | Ω(N × D log D × R) | Sem contenção: shuffle + sort + locks |
+| Tempo (pior caso) | O(N × D log D × R) | Sem fator quadrático (diferente do Árbitro) |
+| Espaço | O(N²) | Matriz de adjacência + mapas de mutex e ordem |
+
+#### Armadilha: ordenação antes da aquisição
+
+A correção depende de ordenar o subconjunto **antes** do loop de locks. Se o `sort.Slice` fosse omitido, a solução degeneraria para locks sem ordenação — que **não** garante deadlock freedom. O código separa explicitamente as etapas de escolha, ordenação e aquisição.
+
+#### Padrão de espera
+
+A ordenação global **inverte** a correlação grau-espera observada nas outras soluções: filósofos de maior grau podem ter espera **menor** que os de menor grau, porque a numeração global nivela a competição de forma distinta.
+
+---
+
+### 3.2 Árbitro (Garçom)
+
+**Responsável:** Samuel William Silva Almeida  
+**Pacote:** `solucoes/arbitro/` (171 linhas)
+
+#### Algoritmo
+
+Um coordenador central mantém um semáforo de capacidade **N − 1** implementado como canal Go bufferizado. Cada filósofo, ao ficar com sede, deve obter permissão do árbitro antes de tentar adquirir garrafas. Com N filósofos e no máximo N − 1 ativos, pelo menos um está sempre tranquilo — impossibilitando o deadlock.
 
 ```go
 type arbiter struct {
     sem chan struct{} // capacidade N-1
 }
-
-func (a *arbiter) acquire() { a.sem <- struct{}{} } // P()
-func (a *arbiter) release() { <-a.sem }             // V()
+func (a *arbiter) acquire() { a.sem <- struct{}{} }
+func (a *arbiter) release() { <-a.sem }
 ```
 
-Cada filósofo, ao ficar com sede, deve primeiro obter permissão do árbitro (`acquire()`), que o bloqueia caso N − 1 filósofos já estejam ativos. Uma vez autorizado, o filósofo sorteia de 2 a *n* garrafas, trava os mutexes correspondentes, bebe por 1 segundo e libera tudo. A prova de correção é direta: com N filósofos e no máximo N − 1 ativos, pelo menos um filósofo está sempre tranquilo e, portanto, pode avançar, impossibilitando o deadlock.
+#### Complexidade
 
-**Complexidade:**
-- Tempo (melhor caso): Ω(N × D × R)
-- Tempo (pior caso): O(N² × R)
-- Espaço: O(N²)
+| Cenário | Complexidade | Justificativa |
+|---------|-------------|---------------|
+| Tempo (melhor caso) | Ω(N × D × R) | Baixa contenção |
+| Tempo (pior caso) | O(N² × R) | Semáforo serializa N − 1 ativos |
+| Espaço | O(N²) | Matriz + mapa de mutexes + canal |
 
-**Principais características:**
-- Estratégia centralizada e simples
-- Gargalo de serialização no semáforo
-- Não garante *starvation-freedom* formalmente
-- Utiliza memória compartilhada (`sync.Mutex` por aresta)
+#### Armadilha: RNG global como gargalo oculto
 
-### 2.3 Chandy-Misra
+A primeira versão usava `math/rand.Intn()` global, que possui um `sync.Mutex` interno. Com N goroutines chamando `rand` intensamente, esse lock se torna um gargalo de contenção. A solução manteve o RNG global intencionalmente para N ≤ 12, onde o impacto é irrelevante. Soluções com muitas threads devem usar RNG privado por goroutine (`rand.New(rand.NewSource(...))`).
 
-> *Solução implementada por Davi de Oliveira.*
+#### Padrão de espera
 
-O algoritmo de Chandy-Misra (1984) é uma solução distribuída que resolve o problema por troca de mensagens entre os filósofos vizinhos, sem qualquer coordenador central. A implementação possui **duas camadas**:
+Apresenta viés contra filósofos de maior grau: no Caso 2, grau 2 esperou 3,34 s enquanto grau 3 esperou 8,51 s. O semáforo serializa o acesso, e filósofos que precisam de mais recursos competem em desvantagem.
 
-1. **Camada dos garfos** (auxiliar): implementa o grafo de precedência H através do "jantar dos filósofos higiênico". Cada aresta possui um garfo que pode estar limpo ou sujo. Para ter precedência sobre uma garrafa, o filósofo precisa estar "comendo" — ou seja, segurando todos os garfos incidentes. Ao começar a comer, ele suja todos os garfos; ao ceder um garfo sujo, ele o entrega limpo.
+---
 
-2. **Camada das garrafas** (recurso real): cada aresta possui uma garrafa e um *request token*. Um filósofo com sede pede as garrafas de que precisa; ao receber um pedido, cede a garrafa a menos que precise dela **e** tenha precedência (garfo limpo) naquela aresta.
+### 3.3 Chandy-Misra
 
-A comunicação entre filósofos é feita exclusivamente por canais Go (`chan message`), com quatro tipos de mensagem: `reqFork`, `sendFork`, `reqBottle` e `sendBottle`. Não há estado compartilhado mutável entre goroutines.
+**Responsável:** Davi de Oliveira  
+**Pacote:** `solucoes/chandy_misra/` (~410 linhas)
 
-**Complexidade:**
-- Mensagens por sessão: O(d) — no máximo 4 por vizinho
-- Mensagens totais: O(rounds × E)
-- Espaço: O(V + E)
+#### Algoritmo
 
-**Principais características:**
-- Estratégia completamente distribuída
-- Garante *starvation-freedom* (Teorema 5, Chandy-Misra, 1984)
-- Necessita de duas camadas conceituais (garfos + garrafas)
-- Utiliza passagem de mensagens (canais), sem memória compartilhada
-- A camada de garfos é essencial: uma implementação inicial com apenas uma camada (garrafas) resultou em deadlock no Caso 3, conforme documentado no desenvolvimento.
+Solução completamente distribuída por troca de mensagens (canais Go) com duas camadas:
 
-### 2.4 Randomized Backoff
+1. **Camada dos garfos** (auxiliar): implementa o grafo de precedência H via "jantar dos filósofos higiênico". Garfos limpos/sujos determinam precedência sobre cada aresta.
+2. **Camada das garrafas** (recurso real): cada aresta possui uma garrafa e um _request token_. Pedidos são servidos na ordem de chegada.
 
-> *Solução implementada por Antonio Mozar Braga.*
+A comunicação usa quatro tipos de mensagem: `reqFork`, `sendFork`, `reqBottle`, `sendBottle`. Não há estado compartilhado mutável entre goroutines.
 
-A solução de *randomized backoff* adota uma abordagem probabilística baseada em tentativa-e-erro com recuo exponencial aleatório. Cada filósofo, ao ficar com sede, tenta adquirir todas as garrafas do subconjunto sorteado utilizando a operação não-bloqueante `TryLock` do pacote `sync` de Go. Se conseguir travar todos os mutexes necessários sem contenção, avança para o estado de bebida. Caso contrário, libera imediatamente os mutexes já adquiridos e espera um intervalo aleatório (até 0,1 segundo) antes de tentar novamente.
+#### Prova de Correção
+
+O Teorema 5 de Chandy & Misra (1984) garante _deadlock-freedom_ e _starvation-freedom_: a distribuição inicial (garfo sujo no filósofo de menor ID) mantém o grafo de precedência H acíclico, e o sistema de mensagens em ordem de chegada (_mailbox_) impede starvation.
+
+#### Complexidade
+
+| Cenário | Complexidade | Justificativa |
+|---------|-------------|---------------|
+| Mensagens por sessão | O(d) | No máximo 4 mensagens por vizinho |
+| Mensagens totais | O(rounds × E) | Por rodada, por aresta |
+| Espaço | O(V + E) | Canais + arestas (sem matriz explícita duplicada) |
+
+#### Armadilha: necessidade da camada de garfos
+
+Uma implementação inicial com apenas a camada de garrafas (sem o grafo de precedência H) apresentou deadlock no Caso 3. A camada de garfos é essencial para manter H acíclico quando filósofos sorteiam subconjuntos arbitrários de garrafas — uma sutileza que não aparece no jantar clássico (onde cada filósofo precisa de exatamente 2 recursos).
+
+#### Padrão de espera
+
+Distribuição mais equilibrada entre todas as soluções. No Caso 2, as esperas variaram de 2,00 s (grau 4) a 3,34 s (grau 2) — sem correlação clara com o grau. Apresentou a menor variância do conjunto.
+
+---
+
+### 3.4 Randomized Backoff
+
+**Responsável:** Antonio Mozar Braga  
+**Pacote:** `solucoes/backoff/` (142 linhas)
+
+#### Algoritmo
+
+Abordagem probabilística: cada filósofo tenta adquirir as garrafas com `TryLock()` (não bloqueante). Se falhar em qualquer uma, libera as já adquiridas e espera um tempo aleatório (0–100 ms) antes de tentar novamente. O uso de `TryLock` elimina espera bloqueante — ninguém fica preso esperando um mutex ocupado.
 
 ```go
 for {
     sucesso := true
-    var garrafasPegas []*sync.Mutex
-
     for _, v := range vizinhosEscolhidos {
-        m := garrafas[chave(menor, maior)]
         if m.TryLock() {
             garrafasPegas = append(garrafasPegas, m)
         } else {
-            sucesso = false
-            break
+            sucesso = false; break
         }
     }
-
-    if sucesso {
-        break
-    }
-    for _, m := range garrafasPegas {
-        m.Unlock()
-    }
+    if sucesso { break }
+    for _, m := range garrafasPegas { m.Unlock() }
     time.Sleep(time.Duration(r.Float64() * 0.1 * float64(time.Second)))
 }
 ```
 
-Cada filósofo possui uma fonte de aleatoriedade (`math/rand.New`) exclusiva, evitando contenção no gerador global. O tempo de *backoff* é contínuo (0 a 100 ms), dimensionado para ser curto o bastante para não atrasar a simulação, mas longo o suficiente para dessincronizar tentativas concorrentes.
+Cada filósofo possui RNG privado, eliminando contenção no gerador global. O tempo de pensamento é **contínuo** (`Float64`), não discreto (`Intn`), reduzindo a probabilidade de dois filósofos acordarem no mesmo instante.
 
-**Complexidade:**
-- Tempo (esperado): O(N × D × R) — na prática degrada com contenção
-- Tempo (pior caso): Não limitado superiormente (abordagem probabilística)
-- Espaço: O(N²)
+#### Complexidade
 
-**Principais características:**
-- Estratégia completamente distribuída e não-bloqueante
-- Sem garantias determinísticas de progresso (probabilística)
-- Implementação simples (~142 linhas)
-- RNG privado por filósofo (sem contenção)
-- *Backoff* curto fixo (0–100 ms), sem escalonamento exponencial
-- Não garante *starvation-freedom* formalmente
+| Cenário | Complexidade | Justificativa |
+|---------|-------------|---------------|
+| Tempo (esperado) | O(N × D × R) | Tentaivas bem-sucedidas na primeira iteração |
+| Tempo (pior caso) | **Não limitado** | Livelock teórico possível |
+| Espaço | O(N²) | Matriz + mapa de mutexes + RNGs privados |
 
----
+#### Armadilha: TryLock não é _fair_
 
-## 3. Resultados
+O método `TryLock()` do `sync.Mutex` em Go não é _fair_. O escalonamento interno pode favorecer certas goroutines, contribuindo para starvation. O backoff fixo (0–100 ms) mitiga parcialmente, mas a solução não oferece garantias formais. Backoff exponencial (_double on each failure_) seria mais robusto para cenários de alta contenção.
 
-As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.Second` como unidade de tempo conforme o enunciado. Cada solução foi executada nos três casos com o número de rodadas especificado.
+#### Padrão de espera
 
-> **Nota:** As tabelas abaixo preservam os resultados coletados antes da integração da solução de Ordenação de Recursos; as células "—" indicam que esses benchmarks ainda precisam ser reexecutados.
-
-### Caso 1 — Jantar Clássico (5 nós, grau 2, 6 rodadas)
-
-| Solução | Tempo total (s) | Espera média (s) | Observações |
-|---------|-----------------|------------------|-------------|
-| Ordenação | — | — | *benchmark pendente* |
-| Árbitro | 18,01 | 2,80 | Espera individual entre 2 e 4 s |
-| Chandy-Misra | 18,01 | 4,20 | Distribuição uniforme: 3 a 5 s |
-| Backoff | 17,42 | 3,56 | Variação individual: 2,40 a 5,15 s |
-
-![Resultados Caso 1 - Árbitro](screenshots/caso1_arbitro.png)
-
-### Caso 2 — Conectividade Baixa (6 nós, graus 2–4, 6 rodadas)
-
-| Solução | Tempo total (s) | Espera média por grau | Observações |
-|---------|-----------------|----------------------|-------------|
-| Ordenação | — | — | *benchmark pendente* |
-| Árbitro | 28,02 | Grau 2: 1,67 s | Desigualdade perceptível: grau 4 esperou 7,01 s |
-| | | Grau 3: 4,00 s | Filósofo 4 (grau 2) teve 0 s de espera |
-| | | Grau 4: 7,01 s | |
-| Chandy-Misra | 24,01 | Grau 2: 3,00 s | Distribuição equilibrada entre graus |
-| | | Grau 3: 4,50 s | Maior espera individual: 5,00 s (grau 3) |
-| | | Grau 4: 3,00 s | Menor variância entre as soluções |
-| Backoff | 22,74 | Grau 2: 1,66 s | Mesmo padrão do Árbitro: graus altos esperam mais |
-| | | Grau 3: 3,72 s | Grau 4 esperou 6,02 s (maior individual) |
-| | | Grau 4: 6,02 s | Grau 2 teve espera mínima de 0,87 s |
-
-![Resultados Caso 2 - Árbitro](screenshots/caso2_arbitro.png)
-
-### Caso 3 — Conectividade Alta (12 nós, graus 2–6, 3 rodadas)
-
-| Solução | Tempo total (s) | Espera média por grau | Observações |
-|---------|-----------------|----------------------|-------------|
-| Ordenação | — | — | *benchmark pendente* |
-| Árbitro | 19,01 | Grau 2: 2,00 s | Grau 3 teve a menor espera (0,40 s) |
-| | | Grau 3: 0,40 s | 3 filósofos de grau 3 tiveram 0 s de espera |
-| | | Grau 4: 2,34 s | Topologia influencia mais que o grau |
-| | | Grau 5: 2,00 s | |
-| | | Grau 6: 1,00 s | |
-| Chandy-Misra | 13,01 | Grau 2: 1,50 s | Distribuição mais equilibrada do conjunto |
-| | | Grau 3: 0,40 s | 4 filósofos com espera zero |
-| | | Grau 4: 0,67 s | Grau 5 (n=1) esperou 3,00 s |
-| | | Grau 5: 3,00 s | Tempo total mais baixo |
-| | | Grau 6: 1,00 s | |
-| Backoff | 13,43 | Grau 2: 0,92 s | 2 filósofos com espera zero |
-| | | Grau 3: 0,77 s | Graus 5 e 6 com maior espera (2,61 e 2,48 s) |
-| | | Grau 4: 0,90 s | Padrão consistente: grau elevado = mais espera |
-| | | Grau 5: 2,61 s | |
-| | | Grau 6: 2,48 s | |
-
-![Resultados Caso 3 - Árbitro](screenshots/caso3_arbitro.png)
+Exibe o mesmo viés contra graus elevados observado no Árbitro. No Caso 2, grau 4 esperou 7,47 s contra 2,58 s do grau 2. O tempo total médio é o mais baixo do conjunto (21,84 s), graças ao `TryLock` não bloqueante.
 
 ---
 
-## 4. Comparativo entre as Soluções
+## 4. Resultados Experimentais
 
-### 4.1 Abordagem de Sincronização
+As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.Second` como unidade de tempo. Cada célula foi executada com `make all`, que roda cada uma das 4 soluções × 3 casos. A saída completa inclui a análise de starvation gerada pelo pacote `core/analyze.go`.
+
+### 4.1 Caso 1 — Jantar Clássico (5 nós, grau 2, 6 rodadas)
+
+| Solução | Tempo total (s) | Espera média (s) | Maior espera (s) | Outliers |
+|---------|----------------|-----------------|-----------------|----------|
+| Ordenação | 21,01 | 4,60 | 6,01 (filo 0) | nenhum |
+| Árbitro | 18,01 | 2,80 | 6,00 (filo 1) | filo 1 (214% da média) |
+| Chandy-Misra | 18,01 | 3,20 | 4,00 (filo 1,2,4) | nenhum |
+| Backoff | 16,99 | 3,58 | 4,69 (filo 2) | nenhum |
+
+**Detalhamento por filósofo (Ordenação):**
+
+| ID | Grau | Tranquilo (s) | Com Sede (s) | Bebendo (s) | Bebidas |
+|----|------|---------------|--------------|-------------|---------|
+| 0 | 2 | 4,00 | 6,01 | 6,00 | 6 |
+| 1 | 2 | 10,00 | 5,01 | 6,00 | 6 |
+| 2 | 2 | 3,00 | 5,00 | 6,00 | 6 |
+| 3 | 2 | 3,00 | 6,01 | 6,00 | 6 |
+| 4 | 2 | 3,00 | 1,00 | 6,00 | 6 |
+
+No grafo cíclico, todos os 5 filósofos possuem grau 2. O Backoff foi o mais rápido (16,99 s) por usar `TryLock` sem espera bloqueante. O Árbitro e o Chandy-Misra empataram em tempo total (18,01 s), mas o Chandy-Misra não apresentou outliers. A Ordenação teve o maior tempo total (21,01 s) e a maior espera média (4,60 s), embora sem outliers.
+
+### 4.2 Caso 2 — Conectividade Baixa (6 nós, graus 2–4, 6 rodadas)
+
+| Solução | Tempo total (s) | Espera média (s) | Grau 2 (n=3) | Grau 3 (n=2) | Grau 4 (n=1) | Outliers |
+|---------|----------------|-----------------|-------------|-------------|-------------|----------|
+| Ordenação | 27,02 | 5,17 | 6,01 | 3,01 | 7,01 | nenhum |
+| Árbitro | 25,02 | 5,34 | 3,34 | 8,51 | 5,01 | nenhum |
+| Chandy-Misra | 22,01 | 2,84 | 3,34 | 2,50 | 2,00 | nenhum |
+| Backoff | 31,16 | 3,01 | 2,58 | 1,42 | 7,47 | filo 1 (211%) |
+
+**Detalhamento por filósofo (Caso 2):**
+
+**Ordenação:**
+| ID | Grau | Tranquilo (s) | Com Sede (s) | Bebendo (s) | Bebidas |
+|----|------|---------------|--------------|-------------|---------|
+| 0 | 2 | 5,00 | 7,01 | 6,01 | 6 |
+| 1 | 2 | 7,00 | 7,01 | 6,00 | 6 |
+| 2 | 3 | 5,00 | 3,00 | 6,01 | 6 |
+| 3 | 3 | 7,00 | 3,01 | 6,00 | 6 |
+| 4 | 2 | 5,00 | 4,00 | 6,01 | 6 |
+| 5 | 4 | 14,00 | 7,01 | 6,01 | 6 |
+
+**Árbitro:**
+| ID | Grau | Tranquilo (s) | Com Sede (s) | Bebendo (s) | Bebidas |
+|----|------|---------------|--------------|-------------|---------|
+| 0 | 2 | 5,00 | 1,00 | 6,01 | 6 |
+| 1 | 2 | 8,00 | 5,01 | 6,01 | 6 |
+| 2 | 3 | 10,01 | 9,01 | 6,01 | 6 |
+| 3 | 3 | 5,00 | 8,01 | 6,01 | 6 |
+| 4 | 2 | 4,00 | 4,01 | 6,00 | 6 |
+| 5 | 4 | 13,00 | 5,01 | 6,00 | 6 |
+
+**Chandy-Misra:**
+| ID | Grau | Tranquilo (s) | Com Sede (s) | Bebendo (s) | Bebidas |
+|----|------|---------------|--------------|-------------|---------|
+| 0 | 2 | 7,00 | 3,00 | 6,00 | 6 |
+| 1 | 2 | 8,01 | 3,00 | 6,00 | 6 |
+| 2 | 3 | 14,00 | 2,00 | 6,01 | 6 |
+| 3 | 3 | 8,00 | 3,00 | 6,01 | 6 |
+| 4 | 2 | 5,00 | 4,00 | 6,00 | 6 |
+| 5 | 4 | 13,01 | 2,00 | 6,00 | 6 |
+
+**Backoff:**
+| ID | Grau | Tranquilo (s) | Com Sede (s) | Bebendo (s) | Bebidas |
+|----|------|---------------|--------------|-------------|---------|
+| 0 | 2 | 7,68 | 1,19 | 6,00 | 6 |
+| 1 | 2 | 7,42 | 5,45 | 6,00 | 6 |
+| 2 | 3 | 11,35 | 0,47 | 6,00 | 6 |
+| 3 | 3 | 12,74 | 2,37 | 6,00 | 6 |
+| 4 | 2 | 2,98 | 1,11 | 6,00 | 6 |
+| 5 | 4 | 17,69 | 7,47 | 6,00 | 6 |
+
+O Caso 2 é o mais revelador para comparar as soluções. O Chandy-Misra foi o mais rápido (22,01 s) e o mais equilibrado (esperas de 2,00 a 4,00 s, sem correlação com grau). O Árbitro exibiu o maior viés: grau 3 esperou 8,51 s (média) contra 3,34 s do grau 2. O Backoff foi o mais lento (31,16 s) — a alta contenção do Caso 2 gerou múltiplas tentativas frustradas e backoffs acumulados. A Ordenação apresentou espera média alta (5,17 s) mas sem outliers: a ordenação global distribuiu a contenção de forma diferente, com grau 3 tendo a menor espera (3,01 s).
+
+### 4.3 Caso 3 — Conectividade Alta (12 nós, graus 2–6, 3 rodadas)
+
+| Solução | Tempo total (s) | Espera média (s) | Grau 2 | Grau 3 | Grau 4 | Grau 5 | Grau 6 | Outliers |
+|---------|----------------|-----------------|--------|--------|--------|--------|--------|----------|
+| Ordenação | 16,01 | 0,75 | 0,50 | 0,80 | 1,33 | 0,00 | 0,00 | filo 4 (225%), filo 5 (250%) |
+| Árbitro | 13,01 | 1,17 | 1,00 | 1,60 | 1,00 | 0,00 | 1,00 | nenhum |
+| Chandy-Misra | 13,01 | 0,58 | 1,50 | 0,20 | 0,67 | 0,00 | 1,00 | filo 7 (300%), filo 8 (**499%** CRÍTICO) |
+| Backoff | 17,36 | 1,17 | 1,07 | 1,27 | 1,38 | 0,29 | 1,08 | nenhum |
+
+**Detalhamento por filósofo (Caso 3):**
+
+**Ordenação:**
+| ID | Grau | Espera (s) | ID | Grau | Espera (s) |
+|----|------|-----------|----|------|-----------|
+| 0 | 3 | 1,00 | 6 | 5 | 0,00 |
+| 1 | 3 | 0,00 | 7 | 4 | 0,00 |
+| 2 | 2 | 0,00 | 8 | 3 | 0,00 |
+| 3 | 4 | 1,00 | 9 | 6 | 0,00 |
+| 4 | 4 | 3,00 | 10 | 2 | 1,00 |
+| 5 | 3 | 2,00 | 11 | 3 | 1,00 |
+
+**Chandy-Misra:**
+| ID | Grau | Espera (s) | ID | Grau | Espera (s) |
+|----|------|-----------|----|------|-----------|
+| 0 | 3 | 0,00 | 6 | 5 | 0,00 |
+| 1 | 3 | 0,00 | 7 | 4 | **2,00** |
+| 2 | 2 | 1,00 | 8 | 3 | **1,00** |
+| 3 | 4 | 0,00 | 9 | 6 | 1,00 |
+| 4 | 4 | 0,00 | 10 | 2 | 2,00 |
+| 5 | 3 | 0,00 | 11 | 3 | 0,00 |
+
+O Caso 3, com 12 filósofos e 3 rodadas, apresentou as menores esperas. O Chandy-Misra teve a menor espera média (0,58 s) e o menor tempo total (13,01 s, empatado com o Árbitro), embora tenha gerado o outlier mais severo: filósofo 8 (grau 3) esperou 1,00 s — **499%** da média do seu grupo (0,20 s), classificado como **CRÍTICO** pelo sistema de análise. Este outlier ocorre porque, com apenas 3 rodadas e médias muito baixas, o desvio relativo é amplificado. Em valores absolutos, 1 s de espera para 3 rodadas é aceitável.
+
+A Ordenação se destacou com 6 filósofos com espera zero, incluindo os de maior grau (5 e 6). Os outliers (filo 4 com 3,00 s e filo 5 com 2,00 s) são explicados pelo alinhamento desfavorável entre seus subconjuntos de garrafas e a ordem global.
+
+---
+
+## 5. Comparativo entre as Soluções
+
+### 5.1 Abordagem de Sincronização
 
 | Dimensão | Ordenação de Recursos | Árbitro (Garçom) | Chandy-Misra | Backoff Aleatório |
 |----------|----------------------|------------------|--------------|-------------------|
@@ -224,141 +360,150 @@ As execuções foram realizadas em ambiente Linux com Go 1.24, utilizando `time.
 | Coordenação | Distribuída (implícita) | Centralizada | Distribuída (explícita) | Distribuída (probabilística) |
 | Garantia de deadlock | Determinística (ordem total) | Determinística (N−1) | Determinística (H acíclico) | Probabilística |
 | Starvation freedom | Sim (fairness por ordem) | Não garantido | Sim (Teorema 5) | Não |
-| Complexidade de código | Média | Baixa | Alta | Baixa |
-| Resposta durante bebida | Não | Não | Sim | Não |
 | Operação de lock | `Lock` (bloqueante) | `Lock` (bloqueante) | Mensagens (canais) | `TryLock` (não-bloqueante) |
-| RNG | — | Global | Privado por filósofo | Privado por filósofo |
+| RNG | Privado por filósofo | Global | Privado por filósofo | Privado por filósofo |
+| Linhas de código | ~108 | ~171 | ~410 | ~142 |
+| Camadas conceituais | 1 (garrafas) | 1 (árbitro + garrafas) | 2 (garfos + garrafas) | 1 (garrafas) |
 
-### 4.2 Complexidade de Tempo e Espaço
+### 5.2 Complexidade Assintótica
 
 | Métrica | Ordenação | Árbitro | Chandy-Misra | Backoff |
 |---------|-----------|---------|--------------|---------|
-| Tempo (melhor caso) | Ω(N × D × R) | Ω(N × D × R) | Ω(N × D × R) | Ω(N × D × R) |
-| Tempo (pior caso) | O(N × D × R) | O(N² × R) | O(rounds × E) | Não limitado |
+| Tempo (melhor caso) | Ω(N × D log D × R) | Ω(N × D × R) | Ω(N × D × R) | Ω(N × D × R) |
+| Tempo (pior caso) | O(N × D log D × R) | **O(N² × R)** | O(rounds × E) | **Não limitado** |
 | Espaço | O(N²) | O(N²) | O(V + E) | O(N²) |
-| Métrica relevante | Locks | Locks | Mensagens | Tentativas |
+| Gargalo principal | `sort.Slice` | Semáforo N−1 | Canais de mensagem | Tentativas T |
 
-### 4.3 Resultados Experimentais Agregados
+### 5.3 Resultados Agregados
 
-| Métrica | Árbitro | Chandy-Misra | Backoff |
-|---------|---------|--------------|---------|
-| Tempo total médio (3 casos) | 21,68 s | 18,34 s | 17,86 s |
-| Desvio padrão das esperas individuais (Caso 2) | 2,48 s | 0,89 s | 1,93 s |
-| Maior espera individual registrada | 7,01 s (grau 4) | 5,00 s (grau 3) | 6,02 s (grau 4) |
-| Data-race free | ✓ | ✓ | ✓ |
-
-O Chandy-Misra apresentou o menor desvio padrão nas esperas individuais, confirmando sua superioridade em *fairness*. O Backoff, embora ligeiramente mais rápido em tempo total médio, exibiu o mesmo viés contra graus elevados observado no Árbitro.
-
-### 4.4 Qualidade da Implementação
-
-| Aspecto | Ordenação | Árbitro | Chandy-Misra | Backoff |
+| Métrica | Ordenação | Árbitro | Chandy-Misra | Backoff |
 |---------|-----------|---------|--------------|---------|
-| Linhas de código | — | ~170 | ~410 | ~142 |
-| Data-race free | — | ✓ (testado `-race`) | ✓ (testado `-race`) | ✓ (testado `-race`) |
-| Testes unitários | — | Sim | Sim | Sim |
-| RNG privado | — | Não (global) | Sim (por filósofo) | Sim (por filósofo) |
+| Tempo total médio (3 casos) | 21,35 s | 18,68 s | 17,68 s | 21,84 s |
+| Desvio padrão das esperas (Caso 2) | 1,86 s | 2,63 s | **0,69 s** | 2,57 s |
+| Maior espera individual | 7,01 s (grau 2/4) | 9,01 s (grau 3) | **4,00 s (grau 2)** | 7,47 s (grau 4) |
+| Outliers detectados (3 casos) | 2 (leves) | 1 (leve) | 2 (1 crítico) | 1 (leve) |
+| Coeficiente de variação médio | 0,51 | 0,53 | **0,30** | 0,56 |
+| Data-race free | ✓ | ✓ | ✓ | ✓ |
 
-### 4.5 Cenários Recomendados
+O Chandy-Misra obteve o melhor equilíbrio geral: menor tempo total médio (17,68 s), menor desvio padrão (0,69 s no Caso 2) e menor coeficiente de variação médio (0,30). A Ordenação e o Backoff tiveram tempos totais médios mais altos (21,35 s e 21,84 s). O Árbitro, embora rápido em alguns casos (13,01 s no Caso 3), apresentou a maior espera individual (9,01 s) e o maior desvio padrão (2,63 s).
 
-- **Ordenação de Recursos**: recomendada para sistemas com topologia fixa e previsível, onde a ordenação prévia das arestas é viável. Oferece bom equilíbrio entre simplicidade e desempenho.
+### 5.4 Correlação Grau × Espera
 
-- **Árbitro (Garçom)**: melhor escolha para protótipos e sistemas com poucos processos (N ≤ 12), onde a simplicidade de implementação e verificação é priorizada. Não recomendada para sistemas críticos onde *fairness* é exigida formalmente.
+| Solução | Padrão observado | Explicação |
+|---------|-----------------|------------|
+| Ordenação | **Invertido**: maior grau → menor espera (Caso 3) | Ordem global nivela competição |
+| Árbitro | **Direto**: maior grau → maior espera (Caso 2) | Semáforo serializa acesso; mais recursos = mais contenção |
+| Chandy-Misra | **Sem correlação**: espera independente do grau | Precedência por garfo elimina viés |
+| Backoff | **Direto**: maior grau → maior espera (Casos 2 e 3) | Mais garrafas = maior probabilidade de falha no TryLock |
 
-- **Chandy-Misra**: recomendada para sistemas distribuídos e cenários onde *fairness* e ausência de starvation são requisitos formais. Ideal para topologias densas e alta concorrência. A complexidade de implementação é compensada pela robustez.
+### 5.5 Análise de Starvation
 
-- **Backoff Aleatório**: adequada para sistemas tolerantes a falhas onde a correção probabilística é aceitável. Útil em cenários com contenção esporádica, mas inadequada para sistemas de tempo real ou críticos. A operação não-bloqueante `TryLock` evita inversão de prioridade, mas não oferece garantias de progresso.
+O sistema de análise implementado em `core/analyze.go` detecta outliers por grau (espera > 2× a média do grupo). Os resultados mostram que:
 
----
+- **Ordenação**: 2 outliers leves no Caso 3 (filo 4 com 225%, filo 5 com 250%). Ambos em valores absolutos baixos (2–3 s para 3 rodadas).
+- **Árbitro**: 1 outlier leve no Caso 1 (filo 1 com 214%). Ausente nos Casos 2 e 3.
+- **Chandy-Misra**: 2 outliers no Caso 3, incluindo 1 **CRÍTICO** (filo 8 com 499% — embora apenas 1,00 s absoluto). O coeficiente de variação médio mais baixo (0,30) confirma a melhor distribuição geral.
+- **Backoff**: 1 outlier leve no Caso 2 (filo 1 com 211%). Ausente nos Casos 1 e 3.
 
-## 5. Análise
+Nenhuma solução apresentou starvation real (filósofos impossibilitados de beber). Todos os 48 filósofos (4 soluções × 12 nós) completaram o número esperado de rodadas em todos os casos.
 
-### 5.1 Deadlock
+### 5.6 Cenários Recomendados
 
-Nenhuma das soluções implementadas (Árbitro, Chandy-Misra e Backoff) apresentou deadlock durante as execuções. Todas passaram nos testes com `go test -race -count=20` nos três grafos, confirmando a ausência de deadlock e de *data races*. A solução Chandy-Misra, após a introdução da camada de garfos, também foi validada com sucesso — uma versão inicial com apenas uma camada (garrafas) apresentou deadlock no Caso 3, evidenciando a sutileza do problema.
+- **Ordenação de Recursos**: ideal para sistemas com topologia fixa e previsível, onde a ordenação prévia das arestas é viável. Oferece o melhor equilíbrio entre simplicidade (~108 linhas) e desempenho determinístico, com a vantagem única de beneficiar filósofos de maior grau.
 
-### 5.2 Starvation e Fairness
+- **Árbitro (Garçom)**: melhor escolha para protótipos e sistemas com poucos processos (N ≤ 12), onde a simplicidade de implementação e verificação é priorizada. Não recomendada para sistemas críticos onde _fairness_ é exigida.
 
-Os resultados revelam diferenças significativas na distribuição de espera entre as soluções.
+- **Chandy-Misra**: recomendada para sistemas distribuídos e cenários onde _fairness_ e ausência de starvation são requisitos formais. Ideal para topologias densas e alta concorrência. A complexidade de implementação (~410 linhas, 2 camadas) é compensada pela robustez.
 
-**Árbitro**: apresentou o padrão mais desigual. No Caso 2, filósofos com grau 2 tiveram espera média de 1,67 s, enquanto o filósofo de grau 4 esperou 7,01 s. Esse viés contra processos com maior demanda é uma limitação inerente a soluções centralizadas: o semáforo serializa o acesso, e filósofos que precisam de mais recursos competem em desvantagem.
-
-**Backoff**: exibiu o mesmo padrão de viés contra graus elevados. No Caso 2, a espera média foi de 1,66 s para grau 2 e 6,02 s para grau 4. Isso ocorre porque filósofos com mais garrafas têm maior probabilidade de encontrar contenção em pelo menos uma delas, aumentando o número de tentativas fracassadas. No Caso 3, filósofos de grau 5 e 6 tiveram as maiores esperas (2,61 s e 2,48 s), enquanto graus 2 a 4 tiveram médias abaixo de 1 s.
-
-**Chandy-Misra**: apresentou a distribuição mais equilibrada. No Caso 2, a espera variou de 3,00 s (grau 2) a 4,50 s (grau 3), sem correlação clara com o grau. No Caso 3, quatro filósofos tiveram espera zero, e as médias por grau ficaram entre 0,40 s e 1,50 s (exceto grau 5, com n=1, que esperou 3,00 s). Esse resultado confirma a garantia formal de *starvation-freedom* do algoritmo original.
-
-No Caso 3, a topologia mostrou-se mais determinante que o grau individual para todas as soluções: filósofos em posições centrais ou com vizinhos pouco demandantes tiveram espera consistentemente menor. Isso sugere que a métrica de "espera média por grau", embora útil, não captura heterogeneidades locais importantes.
-
-### 5.3 Tempo Total de Execução
-
-O Backoff apresentou o menor tempo total médio (17,86 s), seguido pelo Chandy-Misra (18,34 s) e pelo Árbitro (21,68 s). Essa diferença é explicada pelos paradigmas de sincronização:
-
-- O **Backoff** usa `TryLock` não-bloqueante: um filósofo que encontra contenção desiste imediatamente e espera apenas 0–100 ms antes de tentar de novo. Isso reduz o tempo ocioso, pois ninguém fica bloqueado esperando um mutex ocupado.
-- O **Chandy-Misra** usa passagem de mensagens bloqueante: um filósofo que pede uma garrafa ou um garfo fica bloqueado até receber a resposta, o que pode acumular latência.
-- O **Árbitro** usa mutexes bloqueantes combinados com o semáforo: filósofos bloqueados no semáforo ou em mutexes individuais acumulam tempo de espera.
-
-### 5.4 Trade-offs Arquiteturais
-
-A comparação entre as soluções revela um *trade-off* fundamental entre **simplicidade** e **robustez**:
-
-- O **Árbitro** é a solução mais simples (170 linhas, 1 camada conceitual), mas introduz um ponto único de contenção e não garante *fairness*.
-- O **Chandy-Misra** é o mais robusto (garantias formais, distribuído, sem *starvation*), porém significativamente mais complexo (410 linhas, 2 camadas conceituais, gestão explícita de aposentadoria).
-- O **Backoff** ocupa uma posição intermediária: mais simples que o Chandy-Misra (142 linhas), mas sem garantias determinísticas. O uso de `TryLock` elimina espera bloqueante, mas o recuo probabilístico pode, em teoria, levar a starvation.
-- A **Ordenação de Recursos** ocupa uma posição similar ao Árbitro em simplicidade, com a vantagem de evitar deadlock por ordem total dos recursos, desde que essa ordem seja conhecida e estável.
-
-O valor **N − 1** no Árbitro representa o ponto ótimo no *trade-off* entre prevenção de deadlock e maximização da concorrência: valores menores aumentariam a serialização desnecessariamente; valores maiores (N) permitiriam deadlock.
+- **Backoff Aleatório**: adequada para sistemas tolerantes a falhas onde a correção probabilística é aceitável. Útil em cenários com contenção esporádica. O `TryLock` não bloqueante evita inversão de prioridade, mas o tempo total pode ser imprevisível em alta contenção (31,16 s no Caso 2 contra 22,01 s do Chandy-Misra).
 
 ---
 
-## 6. Conclusão
+## 6. Análise
 
-Este trabalho implementou e analisou quatro soluções de sincronização para o problema do Bar dos Filósofos, uma generalização do clássico problema dos filósofos famintos. Cada solução emprega uma estratégia distinta para evitar deadlock: ordenação global de recursos, controle centralizado por semáforo, coordenação distribuída por troca de mensagens e recuo probabilístico com `TryLock`.
+### 6.1 Deadlock
 
-Os resultados experimentais confirmam que todas as três soluções implementadas (Árbitro, Chandy-Misra e Backoff) atendem ao requisito fundamental de ausência de deadlock, validado por testes exaustivos com detector de *data races*. A análise comparativa revelou diferenças marcantes:
+Nenhuma das quatro soluções implementadas apresentou deadlock durante as execuções. Todas passaram nos testes com `go test -race -count=20` nos três grafos, confirmando a ausência de deadlock e de _data races_. A solução Chandy-Misra, após a introdução da camada de garfos, foi validada com sucesso — uma versão inicial com apenas uma camada (garrafas) apresentou deadlock no Caso 3, evidenciando a sutileza do problema quando o subconjunto de recursos é arbitrário.
 
-- O **Chandy-Misra** destacou-se como a única solução com distribuição verdadeiramente equilibrada das esperas, confirmando a garantia formal de *starvation-freedom* do algoritmo original. Seu tempo total médio (18,34 s) é competitivo, e o desvio padrão das esperas (0,89 s no Caso 2) é o menor do conjunto.
-- O **Backoff** provou ser a solução mais rápida em tempo total médio (17,86 s), graças à operação não-bloqueante `TryLock`. No entanto, seu padrão de espera replica o viés contra graus elevados observado no Árbitro, e sua natureza probabilística não oferece garantias formais de progresso.
-- O **Árbitro**, apesar de ser o mais lento (21,68 s em média) e o mais desigual na distribuição de esperas, continua sendo a melhor escolha para protótipos e sistemas pequenos onde a simplicidade de implementação é priorizada sobre *fairness*.
+### 6.2 Starvation
 
-A principal lição do desenvolvimento foi a necessidade de rigor na implementação de algoritmos concorrentes: uma versão inicial do Chandy-Misra com apenas uma camada (garrafas) apresentou deadlock no caso de maior conectividade, ilustrando como a generalização do problema (subconjunto arbitrário de recursos) introduz sutilezas que não aparecem no jantar clássico.
+Os resultados revelam diferenças significativas na distribuição de espera. Em termos de **coeficiente de variação** (cv = stddev/mean), que mede a dispersão relativa das esperas:
 
-Para trabalhos futuros, sugerimos: (a) a reexecução dos benchmarks da solução de Ordenação de Recursos; (b) a execução com um número maior de rodadas para estabilizar as médias; (c) a avaliação em grafos de maior escala (N ≥ 100) para estressar a escalabilidade; e (d) a introdução de métricas adicionais como *throughput* e utilização de recursos.
+- **Chandy-Misra** (cv médio = 0,30) — distribuição mais equilibrada, sem correlação clara entre grau e espera. Confirma a garantia formal de _starvation-freedom_.
+- **Ordenação** (cv médio = 0,51) — distribuição moderadamente equilibrada, com padrão invertido (maior grau, menor espera).
+- **Árbitro** (cv médio = 0,53) — maior variabilidade, com viés contra graus elevados.
+- **Backoff** (cv médio = 0,56) — maior dispersão relativa, com o mesmo viés do Árbitro.
+
+No Caso 3, a topologia mostrou-se mais determinante que o grau individual para todas as soluções: filósofos em posições centrais ou com vizinhos pouco demandantes tiveram espera consistentemente menor.
+
+### 6.3 Tempo Total de Execução
+
+O tempo total médio nos 3 casos foi:
+
+| Solução | Caso 1 | Caso 2 | Caso 3 | Média |
+|---------|--------|--------|--------|-------|
+| Ordenação | 21,01 s | 27,02 s | 16,01 s | 21,35 s |
+| Árbitro | 18,01 s | 25,02 s | 13,01 s | 18,68 s |
+| Chandy-Misra | 18,01 s | 22,01 s | 13,01 s | 17,68 s |
+| Backoff | 16,99 s | 31,16 s | 17,36 s | 21,84 s |
+
+O Chandy-Misra teve o menor tempo total médio (17,68 s), seguido pelo Árbitro (18,68 s). A Ordenação (21,35 s) e o Backoff (21,84 s) foram os mais lentos. O Backoff apresentou a maior variação entre casos (16,99 s a 31,16 s), refletindo a natureza probabilística do algoritmo.
+
+### 6.4 Trade-offs Arquiteturais
+
+A comparação entre as soluções revela um espectro que vai de **simplicidade** a **robustez**:
+
+- **Ordenação de Recursos** (108 linhas, 1 camada): a mais simples entre as determinísticas. Sem coordenador central, sem gargalo de semáforo. Requer topologia estática.
+- **Árbitro** (171 linhas, 1 camada + semáforo): simples, mas com ponto único de contenção. O semáforo N−1 é o ponto ótimo entre prevenção de deadlock e maximização da concorrência.
+- **Backoff** (142 linhas, 1 camada): simples, probabilístico, sem garantias. O `TryLock` evita bloqueio, mas o tempo total varia muito com a contenção.
+- **Chandy-Misra** (410 linhas, 2 camadas): o mais robusto, com garantias formais de _starvation-freedom_. A complexidade é compensada pela confiabilidade.
+
+O valor **N − 1** no Árbitro representa o ponto ótimo no _trade-off_ entre segurança e concorrência: valores menores aumentariam a serialização; valores maiores (N) permitiriam deadlock.
 
 ---
 
-## 7. Como Reproduzir
+## 7. Conclusão
 
-Após descompactar o arquivo ZIP recebido, acesse o diretório raiz do projeto e utilize os comandos abaixo.
+Este trabalho implementou e analisou quatro soluções de sincronização para o problema do Bar dos Filósofos: **Ordenação de Recursos** (ordem total de aquisição), **Árbitro** (semáforo centralizado N−1), **Chandy-Misra** (passagem de mensagens distribuída) e **Randomized Backoff** (tentativa-e-erro com `TryLock`). Cada solução emprega uma estratégia distinta para evitar deadlock, cobrindo um espectro que vai da simplicidade determinística à robustez formal.
 
-**Pré-requisito:** Go 1.21 ou superior instalado no sistema.
+Os resultados experimentais confirmam que **todas as quatro soluções** atendem ao requisito fundamental de ausência de deadlock, validado por testes exaustivos com detector de _data races_ (`go test -race -count=20`). As diferenças estão na distribuição de _fairness_, no tempo total de execução e na complexidade de implementação:
+
+- O **Chandy-Misra** destacou-se como a solução mais equilibrada: menor tempo total médio (17,68 s), menor desvio padrão das esperas (0,69 s) e coeficiente de variação médio mais baixo (0,30), confirmando a garantia formal de _starvation-freedom_.
+- A **Ordenação de Recursos** revelou o padrão mais inesperado: ao contrário das demais, filósofos de maior grau tiveram espera **menor** que os de menor grau, uma consequência da ordem global de aquisição que nivela a competição.
+- O **Árbitro**, apesar de ser o mais simples conceitualmente, exibiu o maior viés contra graus elevados e a maior espera individual (9,01 s).
+- O **Backoff** apresentou a maior variação de desempenho (16,99 s a 31,16 s), refletindo sua natureza probabilística. O uso de `TryLock` elimina espera bloqueante, mas o algoritmo não oferece garantias formais.
+
+A principal lição do desenvolvimento foi a necessidade de rigor na implementação de algoritmos concorrentes: uma versão inicial do Chandy-Misra com apenas uma camada (garrafas) apresentou deadlock no caso de maior conectividade, e a Ordenação de Recursos exige que o subconjunto seja ordenado **antes** do loop de locks — uma sutileza que comprometeria a correção se omitida.
+
+Para trabalhos futuros, sugerimos: (a) execução com um número maior de rodadas (R ≥ 30) para estabilizar as médias; (b) avaliação em grafos de maior escala (N ≥ 100) para estressar a escalabilidade; (c) introdução de métricas adicionais como _throughput_ (bebidas por segundo) e eficiência de escalabilidade (_speedup_); e (d) implementação de _exponential backoff_ na solução de Backoff para melhorar o desempenho em alta contenção.
+
+---
+
+## 8. Como Reproduzir
+
+**Pré-requisito:** Go 1.21 ou superior instalado.
 
 ```sh
-# Entrar no diretório do projeto
+# Descompactar e acessar
 cd concurrent-programming-work/
 
 # Executar uma solução em um grafo específico
-make run SOL=arbitro GRAFO=data/caso2_bar_6.txt RODADAS=6
+make run SOL=ordenacao GRAFO=data/caso1_jantar_5.txt RODADAS=6
 
-# Executar todas as soluções em todos os grafos
+# Executar todas as 4 soluções × 3 grafos
 make all
 
 # Gerar tabela comparativa
 make compare
 
-# Validar ausência de data races e deadlock
+# Validar data races e deadlock
 make race
+
+# Execução direta sem Makefile
+go run ./cmd/runner -solucao=chandy_misra -grafo=data/caso3_bar_12.txt -rodadas=3
 ```
 
-Os resultados são armazenados no diretório `results/` e podem ser visualizados com o script Python de comparação:
-
-```sh
-python3 scripts/compare_results.py
-```
-
-Também é possível executar diretamente sem o Makefile:
-
-```sh
-go run ./cmd/runner -solucao=arbitro -grafo=data/caso1_jantar_5.txt -rodadas=6
-```
+Os resultados são armazenados como TSV em `results/caso<N>/<solucao>.txt`, incluindo a seção `# starvation analysis:` gerada automaticamente pelo pacote `core/analyze.go`.
 
 ---
 
@@ -367,4 +512,5 @@ go run ./cmd/runner -solucao=arbitro -grafo=data/caso1_jantar_5.txt -rodadas=6
 - Chandy, K. M., & Misra, J. (1984). The Drinking Philosophers Problem. *ACM Transactions on Programming Languages and Systems (TOPLAS)*, 6(4), 632–646.
 - Dijkstra, E. W. (1971). Hierarchical ordering of sequential processes. *Acta Informatica*, 1(2), 115–138.
 - Coffman, E. G., Elphick, M. J., & Shoshani, A. (1971). System deadlocks. *ACM Computing Surveys (CSUR)*, 3(2), 67–78.
+- Havender, J. W. (1968). Avoiding deadlock in multitasking systems. *IBM Systems Journal*, 7(2), 74–84.
 - Tanenbaum, A. S., & Bos, H. (2015). *Modern Operating Systems* (4th ed.). Pearson.

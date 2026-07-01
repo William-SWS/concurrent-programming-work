@@ -15,8 +15,8 @@ type Metrics struct {
 	Drinks    int
 }
 
-// Report imprime a tabela por filósofo + o tempo total e a espera média
-// agrupada por grau.
+// Report imprime a tabela por filósofo + o tempo total, a espera média
+// agrupada por grau e a análise de starvation.
 // O formato é estável (TSV) de propósito, para o scripts/compare_results.py
 // conseguir parsear sem ambiguidade.
 func Report(w io.Writer, solucao string, total time.Duration, phs []*Philosopher) {
@@ -41,6 +41,8 @@ func Report(w io.Writer, solucao string, total time.Duration, phs []*Philosopher
 	for _, g := range graus {
 		fmt.Fprintf(w, "# grau=%d media=%.2fs (n=%d)\n", g, media(esperaPorGrau[g]).Seconds(), len(esperaPorGrau[g]))
 	}
+
+	starvationReport(w, phs)
 }
 
 func media(ds []time.Duration) time.Duration {

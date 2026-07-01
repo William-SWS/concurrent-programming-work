@@ -1,10 +1,14 @@
 # solucao=backoff
-# tempo_total=17.25s
+# tempo_total=16.90s
 id	grau	tranquilo	com_sede	bebendo	bebidas
-0	2	7.32	2.91	6.00	6
-1	2	4.03	2.80	6.00	6
-2	2	7.45	2.94	6.00	6
-3	2	4.40	2.91	6.00	6
-4	2	6.37	4.87	6.00	6
+0	2	6.98	3.02	6.00	6
+1	2	3.74	4.53	6.00	6
+2	2	6.64	4.25	6.00	6
+3	2	4.53	2.05	6.00	6
+4	2	5.36	3.62	6.00	6
 # espera media (com sede) por grau:
-# grau=2 media=3.29s (n=5)
+# grau=2 media=3.49s (n=5)
+# starvation analysis:
+#   max_wait=4.53s mean_wait=3.49s stddev=0.89s max/mean=1.30 cv=0.25
+#   grau=2 media=3.49s max=4.53s max/media=1.30 (n=5)
+#   resultado: nenhum filosofo com espera acima de 2x a media do grupo

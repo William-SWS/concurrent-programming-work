@@ -1,13 +1,19 @@
 # solucao=Árbitro (Garçom)
-# tempo_total=21.01s
+# tempo_total=24.01s
 id	grau	tranquilo	com_sede	bebendo	bebidas
-0	2	4.00	3.00	6.00	6
-1	2	6.00	2.00	6.00	6
-2	3	7.00	6.01	6.00	6
-3	3	8.00	4.00	6.00	6
-4	2	8.00	2.00	6.00	6
-5	4	15.00	0.00	6.00	6
+0	2	2.00	0.00	6.00	6
+1	2	9.00	2.00	6.00	6
+2	3	9.00	4.00	6.00	6
+3	3	12.00	4.00	6.01	6
+4	2	4.00	2.00	6.00	6
+5	4	16.01	2.00	6.00	6
 # espera media (com sede) por grau:
-# grau=2 media=2.34s (n=3)
-# grau=3 media=5.00s (n=2)
-# grau=4 media=0.00s (n=1)
+# grau=2 media=1.33s (n=3)
+# grau=3 media=4.00s (n=2)
+# grau=4 media=2.00s (n=1)
+# starvation analysis:
+#   max_wait=4.00s mean_wait=2.34s stddev=1.38s max/mean=1.71 cv=0.59
+#   grau=2 media=1.33s max=2.00s max/media=1.50 (n=3)
+#   grau=3 media=4.00s max=4.00s max/media=1.00 (n=2)
+#   grau=4 media=2.00s max=2.00s max/media=1.00 (n=1)
+#   resultado: nenhum filosofo com espera acima de 2x a media do grupo
